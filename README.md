@@ -1,2 +1,2 @@
 # A3C
-This is project which aims for replaying the A3C results on Atari with a CNTK-based implementation.
+This is a project which aims for replaying the A3C results on Atari with a CNTK-based implementation.
