@@ -1,9 +1,19 @@
+import numpy as np
 import gym
 import dnn
 import logger
 
+lock = 0
+def init_lock(l):
+    global lock
+    lock = l
+
+def execute_agent(thread_id, atari_env, t_max, T_max, C, shared):
+    agent = create_agent(atari_env, t_max, T_max, C, shared)
+    agent.run(thread_id)
+
 def create_shared():
-    pass
+    return dnn.Manager().DeepNet(4)
         
 def create_agent(atari_env, t_max, T_max, C, shared):
     return Agent(atari_env, t_max, T_max, C, shared)
@@ -35,7 +45,13 @@ class Agent:
         
         self.shared = shared
         
-    def run(self, lock, thread_id):
+        self.gradients = np.zeros((shared.dnn_size(), shared.dnn_size())) #!
+        self.own = dnn.DeepNet(shared.dnn_size()) #!
+    
+    # For details: https://arxiv.org/abs/1602.01783
+    def run(self, thread_id):
+        
+        self.thread_id = thread_id
         
         while self.T < self.T_max:
 
@@ -58,7 +74,11 @@ class Agent:
         pass
         
     def synchronize_dnn(self):
-        pass
+        lock.acquire()
+        try:
+            self.shared.deep_copy(self.own.get_mtx())
+        finally:
+            lock.release()
         
     def play_game_for_a_while(self):
         self.t += 1
@@ -69,10 +89,15 @@ class Agent:
         pass
         
     def calculate_gradients(self):
-        pass
+        self.gradients.fill(1)
     
     def async_update(self):
-        pass
+        lock.acquire()
+        try:
+            self.shared.async_update(self.gradients)
+            print (self.thread_id)
+        finally:
+            lock.release()
         
     def evaluate_during_training(self):
         pass

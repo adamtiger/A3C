@@ -1,4 +1,4 @@
-from multiprocessing import Process, Lock
+from multiprocessing import Process, Lock, Pool
 import argparse
 import learner as lrn
 
@@ -24,25 +24,32 @@ args = parser.parse_args()
 
 # IF TRAIN mode -> train the learners
 
-if (args.train_mode):
-    
-    # Initialize the whole program
+shared = lrn.create_shared()
 
-    shared = lrn.create_shared()
+def executable(p):
+    lrn.execute_agent(p, args.atari_env, args.t_max, args.T_max, args.C, shared)
+
+if (args.train_mode):
     
     # start the processes
     if __name__ == '__main__':
-    
-        n = args.num_cores
-        agents = [None] * n
-        for a in range(0, n):
-            agents[a] = lrn.create_agent(args.atari_env, args.t_max, args.T_max, args.C, shared)
         
-        lock = Lock()
-        processes = [None] * n
+        n = args.num_cores
+        l = Lock()
+        
+        pool = Pool(n, initializer = lrn.init_lock, initargs = (l,))
+        idcs = [0] * n
         for p in range(0, n):
-            processes[p] = Process(target=agents[p].run, args=(lock, p)).start()
-
+            idcs[p] = p
+            
+        pool.map(executable, idcs)
+            
+        pool.close()
+        pool.join()
+        
+        shared.print_mtx()
+        
+        
 # IF EVALUATION mode -> evaluate a test run (rewards, video)
 else:
 
