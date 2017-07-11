@@ -1,6 +1,7 @@
 import numpy as np
 import scipy.misc as sc
 import gym
+from gym import wrappers
 import dnn
 import logger
 
@@ -13,21 +14,25 @@ def init_lock(l):
 
 # Easier to call these functions from other modules.
 
-def execute_agent(thread_id, atari_env, t_max, T_max, C, shared):
-    agent = create_agent(atari_env, t_max, T_max, C, shared)
-    agent.run(thread_id)
+def create_shared(env_name):
+    temp_env = gym.make(env_name)
+    num_actions = temp_env.action_space.n
+    net = dnn.Manager().DeepNet(num_actions)
+    temp_env.close()
+    return net
 
-def create_shared():
-    return dnn.Manager().DeepNet(4)
+def execute_agent(learner_id, atari_env, t_max, T_max, C, eval_num, shared):
+    agent = create_agent(atari_env, t_max, T_max, C, eval_num, shared)
+    agent.run(learner_id)
         
-def create_agent(atari_env, t_max, T_max, C, shared):
-    return Agent(atari_env, t_max, T_max, C, shared)
+def create_agent(atari_env, t_max, T_max, C, eval_num, shared):
+    return Agent(atari_env, t_max, T_max, C, eval_num, shared)
     
 def create_agent_for_evaluation(file_name):
     
     # read the json with data (environemnt name and dnn model)
     
-    agent = Agent('Breakout-v0', 0, 0, 0, None)
+    agent = Agent('Breakout-v0', 0, 0, 0, 0, None)
     agent.read_model(file_name)
     
     return agent
@@ -58,15 +63,15 @@ class Queue:
         self.observations.fill(0)
         self.rewards.fill(0)
         self.actions.fill(0)
-        self.last_idx = 0
+        self.last_idx = -1
         self.is_last_terminal = False
         
     def add(self, observation, reward, action, done):
+        self.last_idx += 1
         self.observations[self.last_idx, :, :, :] = observation[:,:,:]
         self.rewards[self.last_idx] = reward
         self.actions[self.last_idx] = action
         
-        self.last_idx += 1
         self.is_last_terminal = done
         
     def get_recent_state(self):
@@ -81,6 +86,9 @@ class Queue:
     
     def get_reward_at(self, idx):
         return self.rewards[idx]
+        
+    def get_recent_reward(self):
+        return self.rewards[self.last_idx]
     
     def get_action_at(self, idx):
         return self.actions[idx]
@@ -125,7 +133,7 @@ def env_step(env, queue, action):
 
 class Agent:
     
-    def __init__(self, env_name, t_max, T_max, C, shared):
+    def __init__(self, env_name, t_max, T_max, C, eval_num, shared):
         
         self.t_start = 0
         self.t = 0
@@ -135,6 +143,7 @@ class Agent:
         self.T_max = T_max
         
         self.C = C
+        self.eval_num = eval_num
         
         self.shared = shared
         
@@ -142,23 +151,23 @@ class Agent:
         
         self.queue = Queue(t_max)
         self.env = gym.make(env_name)
+        self.net = dnn.DeepNet(self.env.action_space.n)
         self.s_t = env_reset(self.env, self.queue)
         
-        self.gradients = np.zeros((shared.dnn_size(), shared.dnn_size())) #!
-        self.own = dnn.DeepNet(shared.dnn_size()) #!
+        self.gradients = np.zeros((5, 5)) #!
         
         self.R = 0
+        self.sign = False
     
     # For details: https://arxiv.org/abs/1602.01783
-    def run(self, thread_id):
+    def run(self, learner_id):
         
-        self.thread_id = thread_id
+        self.learner_id = learner_id
         
         while self.T < self.T_max:
 
-            self.reset_gradients()
+            self.clear_gradients()
             self.synchronize_dnn()
-            self.t_start = self.t
             
             self.play_game_for_a_while()
             
@@ -166,20 +175,20 @@ class Agent:
             
             self.calculate_gradients()
             
-            self.async_update()
+            self.sync_update()
             
             if self.T % self.C == 0:
                 self.evaluate_during_training()
     
     # IMPLEMENTATIONS FOR the FUNCTIONS above
                 
-    def reset_gradients(self):
-        pass
+    def clear_gradients(self):
+        self.gradients.fill(0.0)
         
     def synchronize_dnn(self):
         lock.acquire()
         try:
-            self.shared.deep_copy(self.own.get_mtx())
+            self.shared.synchronize_net(self.net)
         finally:
             lock.release()
         
@@ -192,33 +201,75 @@ class Agent:
         while not (self.is_terminal or self.t - self.t_start == self.t_max):
             self.t += 1
             self.T += 1
-            action = dnn.action_with_exploration(self.own, self.s_t)
+            action = dnn.action_with_exploration(self.net, self.s_t)
             self.s_t = env_step(self.env, self.queue, action)
             self.is_terminal = self.queue.get_is_last_terminal()
-            if self.T % 100 == 0:
-                print (self.T/100.0)
+            if self.T % self.C == 0:
+                self.sign = True
         
     def set_R(self):
         if self.is_terminal:
             self.R = 0
         else:
-            self.R = dnn.value(self.own, self.s_t)
+            self.R = dnn.value(self.net, self.s_t)
         
     def calculate_gradients(self):
         self.gradients.fill(1)
+        
+        if self.sign:
+            logger.log_losses(0, self.T, self.learner_id)
+            self.sign = False
+        
     
-    def async_update(self):
+    def sync_update(self):
         lock.acquire()
         try:
-            self.shared.async_update(self.gradients)
+            self.shared.sync_update(self.gradients)
         finally:
             lock.release()
         
     def evaluate_during_training(self):
-        pass
-    
+        
+        print ('Evaluation at: ' + str(self.T))
+        
+        for rnd in range(self.eval_num):
+            state = env_reset(self.env, self.queue)
+            finished = False
+            cntr = 0
+            rewards = []
+            while not (finished or cntr == self.t_max):
+                action = dnn.action(self.net, state)
+                state = env_step(self.env, self.queue, action)
+                rewards.append(self.queue.get_recent_reward())
+                
+                finished = self.queue.get_is_last_terminal()
+                cntr += 1
+            
+            logger.log_rewards(rewards, self.T, self.learner_id, rnd)
+            
     def evaluate(self):
-        pass   
+        
+        print ('Start evaluating.')
+        env = wrappers.Monitor(self.env, 'videos')
+        state = env_reset(env, self.queue)
+        finished = False
+        cntr = 0
+        rewards = []
+        while not (finished or cntr == self.t_max):
+            env.render()
+            action = dnn.action(self.net, state)
+            state = env_step(env, self.queue, action)
+            rewards.append(self.queue.get_recent_reward())
+                
+            finished = self.queue.get_is_last_terminal()
+            cntr += 1  
+         
+        # Representing the results. 
+        print ('The collected rewards over duration:')
+        total_rw = 0.0
+        for x in range(len(rewards)):
+            total_rw += rewards[x]
+        print (total_rw)
         
     # Read and write the model.
     

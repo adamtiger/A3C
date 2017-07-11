@@ -11,29 +11,27 @@ def Manager():
 
 class DeepNet:
     
-    def __init__(self, size):
-        self.size = size
-        self.shared = np.zeros((size, size), dtype=float)
+    def __init__(self, num_actions): # (*)
+        self.num_actions = num_actions
+        self.shared = np.zeros((num_actions, num_actions), dtype=float)
     
     def get_mtx(self):
         return self.shared
         
     def dnn_size(self):
-        return self.size
+        return self.num_actions
     
-    def deep_copy(self, target):
+    def synchronize_net(self, net): # (*)
         
-        if target.shape == self.shared.shape:
-            for row in range(0, target.shape[0]):
-                for col in range(0, target.shape[1]):
-                    target[row, col] = self.shared[row, col]
+        if net.get_mtx().shape == self.shared.shape:
+            for row in range(0, 5):
+                for col in range(0, 5):
+                    net.get_mtx()[row, col] = self.shared[row, col]
                     
-    def async_update(self, update):
-        
+    def sync_update(self, update): # (*)
         if update.shape == self.shared.shape:
             self.shared += update
 
-            
     def print_mtx(self):
         print (self.shared)
         
@@ -42,9 +40,10 @@ DnnManager.register('DeepNet', DeepNet)
 
 
 # Functions to generate the next actions
-
+import random as r
 def action(net, state):
-    return 0
+    #n = net.dnn_size()
+    return r.randint(0, 5)
     
 def action_with_exploration(net, state):
     return 0
