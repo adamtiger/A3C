@@ -47,7 +47,13 @@ class Queue:
         
         self.last_idx = 0
         self.is_last_terminal = False
+    
+    def get_last_idx(self):
+        return self.last_idx
         
+    def get_is_last_terminal(self):
+        return self.is_last_terminal
+    
     def queue_reset(self):
         self.observations.fill(0)
         self.rewards.fill(0)
@@ -89,8 +95,8 @@ def process_img(observation):
     img = np.array(observation)
     
     # Cropping the playing area. The shape based on empirical decision.
-    img_cropped = np.zeros((185, 160, 1))
-    img_cropped[:,:,0] = img[16:201,:,0]
+    img_cropped = np.zeros((185, 160, 3))
+    img_cropped[:,:,:] = img[16:201,:,:]
     
     # Mapping from RGB to gray scale. (Shape remains unchanged.)
     # Y = (2*R + 5*G + 1*B)/8
@@ -99,7 +105,7 @@ def process_img(observation):
     
     # Rescaling image to 84x84x1.
     img_cropped_gray_resized = np.zeros((84,84,1))
-    img_cropped_gray_resized[:,:,0] = sc.imresize(img_cropped, (84,84,1), interp='bilinear', mode=None)
+    img_cropped_gray_resized[:,:,0] = sc.imresize(img_cropped_gray, (84,84,1), interp='bilinear', mode=None)
     
     # Saving memory. Colors goes from 0 to 255.
     img_final = np.uint8(img_cropped_gray_resized)
@@ -113,7 +119,7 @@ def env_reset(env, queue):
     
 def env_step(env, queue, action):
     obs, rw, done, _ = env.step(action)
-    queue(process_img(obs), rw, action, done)
+    queue.add(process_img(obs), rw, action, done)
     return queue.get_recent_state()
 
 
@@ -140,6 +146,8 @@ class Agent:
         
         self.gradients = np.zeros((shared.dnn_size(), shared.dnn_size())) #!
         self.own = dnn.DeepNet(shared.dnn_size()) #!
+        
+        self.R = 0
     
     # For details: https://arxiv.org/abs/1602.01783
     def run(self, thread_id):
@@ -162,6 +170,8 @@ class Agent:
             
             if self.T % self.C == 0:
                 self.evaluate_during_training()
+    
+    # IMPLEMENTATIONS FOR the FUNCTIONS above
                 
     def reset_gradients(self):
         pass
@@ -174,19 +184,25 @@ class Agent:
             lock.release()
         
     def play_game_for_a_while(self):
-        self.t += 1
-        self.T += 1
-        
-        if self.is_terminal:
-            self.s_t = env_reset(self.env, self.queue)
-        
-        while is_terminal or self.t - self.t_start == self.t_max:
-            pass
-            
-        
     
+        self.t_start = self.t
+        
+        self.s_t = env_reset(self.env, self.queue)
+        
+        while not (self.is_terminal or self.t - self.t_start == self.t_max):
+            self.t += 1
+            self.T += 1
+            action = dnn.action_with_exploration(self.own, self.s_t)
+            self.s_t = env_step(self.env, self.queue, action)
+            self.is_terminal = self.queue.get_is_last_terminal()
+            if self.T % 100 == 0:
+                print (self.T/100.0)
+        
     def set_R(self):
-        pass
+        if self.is_terminal:
+            self.R = 0
+        else:
+            self.R = dnn.value(self.own, self.s_t)
         
     def calculate_gradients(self):
         self.gradients.fill(1)
@@ -195,7 +211,6 @@ class Agent:
         lock.acquire()
         try:
             self.shared.async_update(self.gradients)
-            print (self.thread_id)
         finally:
             lock.release()
         

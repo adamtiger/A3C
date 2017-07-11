@@ -39,3 +39,15 @@ class DeepNet:
         
         
 DnnManager.register('DeepNet', DeepNet)
+
+
+# Functions to generate the next actions
+
+def action(net, state):
+    return 0
+    
+def action_with_exploration(net, state):
+    return 0
+    
+def value(net, state):
+    return 0
