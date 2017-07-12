@@ -42,8 +42,8 @@ DnnManager.register('DeepNet', DeepNet)
 # Functions to generate the next actions
 import random as r
 def action(net, state):
-    #n = net.dnn_size()
-    return r.randint(0, 5)
+    n = net.dnn_size()
+    return r.randint(0, n-1)
     
 def action_with_exploration(net, state):
     return 0

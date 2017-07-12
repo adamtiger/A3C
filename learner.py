@@ -28,12 +28,14 @@ def execute_agent(learner_id, atari_env, t_max, T_max, C, eval_num, shared):
 def create_agent(atari_env, t_max, T_max, C, eval_num, shared):
     return Agent(atari_env, t_max, T_max, C, eval_num, shared)
     
-def create_agent_for_evaluation(file_name):
+def create_agent_for_evaluation():
     
     # read the json with data (environemnt name and dnn model)
     
-    agent = Agent('Breakout-v0', 0, 0, 0, 0, None)
-    agent.read_model(file_name)
+    atari_name = logger.read_metadata()
+    
+    agent = Agent(atari_name, 10000, 0, 0, 0, None)
+    agent.read_model()
     
     return agent
 
@@ -250,7 +252,7 @@ class Agent:
     def evaluate(self):
         
         print ('Start evaluating.')
-        env = wrappers.Monitor(self.env, 'videos')
+        env = wrappers.Monitor(self.env, 'videos', force=True)
         state = env_reset(env, self.queue)
         finished = False
         cntr = 0

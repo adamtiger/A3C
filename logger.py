@@ -13,6 +13,7 @@ def create_folders(atari_name, cores, tmax, Tmax, C):
     if os.path.exists(root):
         # Delete if exists.
         print ('The folder named files is deleted!')
+        input ('Press Enter to continue.')
         shutil.rmtree(root)
         
     # Create the new folders.
@@ -32,4 +33,20 @@ def log_losses(loss, iteration, learner_id):
     file_name = path_losses + "loss_" + str(iteration) + "_" + str(learner_id) + "_.json"
     with open(file_name, "w") as f:
         f.write(json.dumps(loss))
+    
+def read_metadata():
+    with open(path_meta, "r") as f:
+        data = json.load(f)
+    return data[1]
+    
+def read_model():
+    pass
+    
+def write_model(model):
+    pass
+    
+    
+    
+    
+    
     

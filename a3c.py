@@ -20,12 +20,8 @@ parser.add_argument('--eval-num', type=int, default=10, metavar='N',
         help='the number of evaluations in an evaluation session (default:10)')
 parser.add_argument('--train-mode', action='store_true',
         help='training or evaluation')
-parser.add_argument('--file-name', default='model.json', metavar='S',
-        help='the name of the file where the model was saved (default:model.json)')
 
 args = parser.parse_args()
-
-logger.create_folders(args.atari_env, args.num_cores, args.t_max, args.T_max, args.C)
 
 # IF TRAIN mode -> train the learners
 
@@ -35,7 +31,8 @@ def executable(p):
     lrn.execute_agent(p, args.atari_env, args.t_max, args.T_max, args.C, args.eval_num, shared)
 
 if (args.train_mode):
-    
+
+    logger.create_folders(args.atari_env, args.num_cores, args.t_max, args.T_max, args.C)
     # start the processes
     if __name__ == '__main__':
         
@@ -58,5 +55,5 @@ if (args.train_mode):
 # IF EVALUATION mode -> evaluate a test run (rewards, video)
 else:
 
-    ag = lrn.create_agent_for_evaluation(args.file_name)
+    ag = lrn.create_agent_for_evaluation()
     ag.evaluate()    
