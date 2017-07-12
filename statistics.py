@@ -2,6 +2,10 @@ import json
 import os
 import matplotlib.pyplot as plt
 
+
+path_rewards = 'files/rewards/'
+path_losses = 'files/losses/'
+
 # CREATE PLOTS and draw some STATISTICAL DATA
 
 def collect_reward_file_names():
@@ -10,22 +14,26 @@ def collect_reward_file_names():
     
     for idx in range(0, len(list_of_names)):
         attributes = list_of_names[idx].split(".")[0] # Cut the json part from the string.
-        attributes = attributes.split("/")[2] # Cut the string part with the numbers.
-        attributes = attributes.split("_")[1:4] # Contains the iteration, learner_id and rnd values.
+        attributes = attributes.split("/") # Cut the string part with the numbers.
+        attributes = attributes[0].split("_")[1:4] # Contains the iteration, learner_id and rnd values.
         
         iteration = int(attributes[0])
         learner_id = int(attributes[1])
-        rnd = int(attributes[2])
         
-        file_name = list_of_names[idx]
+        file_name = path_rewards + list_of_names[idx]
         with open(file_name, "r") as f:
             rewards = json.load(f)
         
         sum = 0.0
         for x in rewards:
             sum += x
-        
-        total_rewards[learner_id][iteration][rnd] = sum
+            
+        if learner_id not in total_rewards:
+            total_rewards[learner_id] = {}
+        if iteration in total_rewards[learner_id]:
+             total_rewards[learner_id][iteration].append(sum)
+        else:
+            total_rewards[learner_id] = { iteration: [sum] }
     
     return total_rewards
     
