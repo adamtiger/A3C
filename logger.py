@@ -37,7 +37,7 @@ def log_losses(loss, iteration, learner_id):
 def read_metadata():
     with open(path_meta, "r") as f:
         data = json.load(f)
-    return data[1]
+    return data
     
 def read_model():
     pass

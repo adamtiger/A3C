@@ -31,7 +31,9 @@ def executable(p):
     lrn.execute_agent(p, args.atari_env, args.t_max, args.T_max, args.C, args.eval_num, shared)
 
 if (args.train_mode):
-
+    
+    print ('Training mode.')
+    
     logger.create_folders(args.atari_env, args.num_cores, args.t_max, args.T_max, args.C)
     # start the processes
     if __name__ == '__main__':
@@ -54,6 +56,8 @@ if (args.train_mode):
         
 # IF EVALUATION mode -> evaluate a test run (rewards, video)
 else:
-
+    
+    print ('Evaluation mode.')
+    
     ag = lrn.create_agent_for_evaluation()
     ag.evaluate()    

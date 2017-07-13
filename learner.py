@@ -32,7 +32,8 @@ def create_agent_for_evaluation():
     
     # read the json with data (environemnt name and dnn model)
     
-    atari_name = logger.read_metadata()
+    meta_data = logger.read_metadata()
+    atari_name = meta_data[1]
     
     agent = Agent(atari_name, 10000, 0, 0, 0, None)
     agent.read_model()
@@ -49,8 +50,6 @@ class Queue:
         self.observations = np.ndarray((self.size, 84, 84, 1))
         self.rewards = np.ndarray((self.size))
         self.actions = np.ndarray((self.size))
-        
-        self.stacked = np.ndarray((84, 84, 4))
         
         self.last_idx = 0
         self.is_last_terminal = False
@@ -219,7 +218,7 @@ class Agent:
         self.gradients.fill(1)
         
         if self.sign:
-            logger.log_losses(0, self.T, self.learner_id)
+            logger.log_losses(0, self.T, self.learner_id) #!
             self.sign = False
         
     
