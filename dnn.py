@@ -23,10 +23,15 @@ class DeepNet:
         self.num_actions = num_actions
         self.shared = np.zeros((num_actions, num_actions), dtype=float)
         
+        self.build_model()
+        self.build_trainer()
+        
     def build_model(self):
         
-        # Defining the input and output variables.
-        stacked_frames = cntk.input_variable((84, 84, 4))
+        # Defining the input variables for training and evaluation.
+        self.stacked_frames = cntk.input_variable((84, 84, 4))
+        self.action = cntk.input_variable(self.num_actions)
+        self.R = cntk.input_variable(1)
         
         # Creating the shared functions. (The common part of the two NNs.)
         conv1 = Convolution2D((8, 8), num_filters = 16, pad = False, strides=4, activation=cntk.relu)
@@ -42,7 +47,10 @@ class DeepNet:
         pi = Sequential([shared_funcs, Dense(self.num_actions, activation=cntk.softmax)])
         parameters_pi = pi(stacked_frames)
         
-        self.model = [pi, parameters_pi, v, parameters_v] 
+        self.pi = pi
+        self.pms_pi = parameters_pi
+        self.v = v
+        self.pms_v = parameters_v 
         
     def build_trainer(self):
         
@@ -54,26 +62,43 @@ class DeepNet:
         
         # Calculate the losses.
         
-        loss_on_v
-        loss_on_pi
+        loss_on_v = cntk.squared_error(self.R, self.v)
+        
+        pi_a_s = cntk.times_transpose(cntk.log(self.pi), self.action)
+        loss_on_pi = cntk.times(pi_a_s, cntk.minus(self.R, self.v))
         
         # Create the trainiers.
         
-        trainer_v = cntk.Trainer(self.model[3], (loss_on_v), [adam(lr, beta1, beta2)])
-        trainer_pi = cntk.Trainer(self.model[1], (loss_on_pi), [adam(lr, beta1, beta2)])
+        trainer_v = cntk.Trainer(self.pms_v, (loss_on_v), [adam(lr, beta1, beta2)])
+        trainer_pi = cntk.Trainer(self.pms_pi, (loss_on_pi), [adam(lr, beta1, beta2)])
         
-        self.trainer = [trainer_pi, trainer_v]
+        self.trainer_pi = trainer_pi
+        self.trainer_v = trainer_v
+    
+    def train_net(self, state, action, R):
         
+        action_as_array = np.zeros(self.num_actions)
+        action_as_array[action] = 1
         
+        self.trainer_pi.train_minibatch({self.stacked_frames: state, self.action: action_as_array, self.R = R})
+        self.trainer_v.train_minibatch({self.stacked_frames: state, self.R = R})
+    
     def dnn_actions(self):
         return self.num_actions
     
     def synchronize_net(self, net): 
-        
+        cntk.assign(net.get_parameters_pi(), self.pms_pi)
+        cntk.assign(net.get_parameters_v(), self.pms_v)
                     
-    def sync_update(self, update):
-
-
+    def sync_update(self, update_pi, update_v):
+        cntk.assign(self.pms_pi, cntk.plus(self.pms_pi, update_pi)).eval()
+        cntk.assign(self.pms_v, cntk.plus(self.pms_v, update_v)).eval()
+    
+    def get_parameters_pi(self):
+        return self.pms_pi
+        
+    def get_parameters_v(self):
+        return self.pms_v
         
 DnnManager.register('DeepNet', DeepNet)
 
