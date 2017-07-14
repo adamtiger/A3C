@@ -18,6 +18,8 @@ parser.add_argument('--C', type=int, default=25, metavar='N',
         help='the frequency of evaluation during training (default:25)')
 parser.add_argument('--eval-num', type=int, default=10, metavar='N',
         help='the number of evaluations in an evaluation session (default:10)')
+parser.add_argument('--gamma', type=float, default=0.99, metavar='F',
+        help='the discounting factor (default:0.99)')
 parser.add_argument('--train-mode', action='store_true',
         help='training or evaluation')
 
@@ -28,20 +30,21 @@ args = parser.parse_args()
 shared = lrn.create_shared(args.atari_env)
 
 def executable(p):
-    lrn.execute_agent(p, args.atari_env, args.t_max, args.T_max, args.C, args.eval_num, shared)
+    lrn.execute_agent(p, args.atari_env, args.t_max, args.T_max, args.C, args.eval_num, args.gamma)
 
 if (args.train_mode):
     
     print ('Training mode.')
     
-    logger.create_folders(args.atari_env, args.num_cores, args.t_max, args.T_max, args.C)
+    logger.create_folders(args.atari_env, args.num_cores, args.t_max, args.T_max, args.C, args.gamma)
     # start the processes
     if __name__ == '__main__':
         
         n = args.num_cores
         l = Lock()
+        sh = lrn.create_shared(args.atari_env)
         
-        pool = Pool(n, initializer = lrn.init_lock, initargs = (l,))
+        pool = Pool(n, initializer = lrn.init_lock_shared, initargs = (l,sh,))
         idcs = [0] * n
         for p in range(0, n):
             idcs[p] = p
@@ -51,9 +54,8 @@ if (args.train_mode):
         pool.close()
         pool.join()
         
-        shared.print_mtx()
-        
-        
+        logger.save_model(shared)
+         
 # IF EVALUATION mode -> evaluate a test run (rewards, video)
 else:
     

@@ -7,9 +7,10 @@ root = 'files'
 path_rewards = 'files/rewards/'
 path_losses = 'files/losses/'
 path_meta = 'files/metadata.json'
-path_model = 'files/model.hf5'
+path_model_pi = 'files/model_pi.model'
+path_model_v = 'files/model_v.model'
 
-def create_folders(atari_name, cores, tmax, Tmax, C):
+def create_folders(atari_name, cores, tmax, Tmax, C, gamma):
     if os.path.exists(root):
         # Delete if exists.
         print ('The folder named files is deleted!')
@@ -20,7 +21,7 @@ def create_folders(atari_name, cores, tmax, Tmax, C):
     os.makedirs(path_rewards)
     os.makedirs(path_losses)
         
-    metadata = [time.strftime("%d/%m/%y"), atari_name, str(cores), str(tmax), str(Tmax), str(C)]
+    metadata = [time.strftime("%d/%m/%y"), atari_name, str(cores), str(tmax), str(Tmax), str(C), str(gamma)]
     with open(path_meta, "w") as f:
         f.write(json.dumps(metadata))
 
@@ -38,15 +39,9 @@ def read_metadata():
     with open(path_meta, "r") as f:
         data = json.load(f)
     return data
+
+def save_model(net):
+    net.save_model(path_model_pi, path_model_v)
     
-def read_model():
-    pass
-    
-def write_model(model):
-    pass
-    
-    
-    
-    
-    
-    
+def load_model(net):
+    net.load_model(path_model_pi, path_model_v)

@@ -8,25 +8,31 @@ import logger
 # In case of Pool the Lock object can not be passed in the initialization argument.
 # This is the solution
 lock = 0
-def init_lock(l):
+shared = 0
+def init_lock_shared(l, sh):
     global lock
+    global shared
     lock = l
+    shared = sh
 
 # Easier to call these functions from other modules.
-
 def create_shared(env_name):
     temp_env = gym.make(env_name)
     num_actions = temp_env.action_space.n
     net = dnn.Manager().DeepNet(num_actions)
     temp_env.close()
-    return net
+    
+    prms_pi = net.get_parameters_pi()
+    prms_v = net.get_parameters_v()
+    
+    return [prms_pi, prms_v]
 
-def execute_agent(learner_id, atari_env, t_max, T_max, C, eval_num, shared):
-    agent = create_agent(atari_env, t_max, T_max, C, eval_num, shared)
+def execute_agent(learner_id, atari_env, t_max, T_max, C, eval_num, gamma):
+    agent = create_agent(atari_env, t_max, T_max, C, eval_num, gamma)
     agent.run(learner_id)
         
-def create_agent(atari_env, t_max, T_max, C, eval_num, shared):
-    return Agent(atari_env, t_max, T_max, C, eval_num, shared)
+def create_agent(atari_env, t_max, T_max, C, eval_num, gamma):
+    return Agent(atari_env, t_max, T_max, C, eval_num, gamma)
     
 def create_agent_for_evaluation():
     
@@ -35,8 +41,8 @@ def create_agent_for_evaluation():
     meta_data = logger.read_metadata()
     atari_name = meta_data[1]
     
-    agent = Agent(atari_name, 10000, 0, 0, 0, None)
-    agent.read_model()
+    agent = Agent(atari_name, 10000, 0, 0, 0, 0)
+    logger.load_model(agent.get_net())
     
     return agent
 
@@ -45,13 +51,13 @@ def create_agent_for_evaluation():
 class Queue:
     
     def __init__(self, max_size):
-        self.size = max_size
+        self.size = max_size + 1
         
-        self.observations = np.ndarray((self.size, 84, 84, 1))
+        self.observations = np.ndarray((self.size, 84, 84))
         self.rewards = np.ndarray((self.size))
         self.actions = np.ndarray((self.size))
         
-        self.last_idx = 0
+        self.last_idx = -1
         self.is_last_terminal = False
     
     def get_last_idx(self):
@@ -69,7 +75,7 @@ class Queue:
         
     def add(self, observation, reward, action, done):
         self.last_idx += 1
-        self.observations[self.last_idx, :, :, :] = observation[:,:,:]
+        self.observations[self.last_idx, :, :] = observation[0,:,:]
         self.rewards[self.last_idx] = reward
         self.actions[self.last_idx] = action
         
@@ -77,12 +83,12 @@ class Queue:
         
     def get_recent_state(self):
         if self.last_idx > 2:
-            return self.observations[self.last_idx-3:self.last_idx+1,:,:,:]
+            return self.observations[self.last_idx-3:self.last_idx+1,:,:]
         return None
         
     def get_state_at(self, idx):
         if idx > 2:
-            return self.observations[idx-3:idx+1,:,:,:]
+            return self.observations[idx-3:idx+1,:,:]
         return None
     
     def get_reward_at(self, idx):
@@ -101,20 +107,23 @@ def process_img(observation):
 
     # Input: the raw frame as a list with shape (210, 160, 3)
     # https://gym.openai.com/envs/Breakout-v0 
-    img = np.array(observation)
+    input_img = np.array(observation)
+    
+    # Reshape input to meet with CNTK expectations.
+    img = np.reshape(input_img, (3, 210, 160))
     
     # Cropping the playing area. The shape based on empirical decision.
-    img_cropped = np.zeros((185, 160, 3))
-    img_cropped[:,:,:] = img[16:201,:,:]
+    img_cropped = np.zeros((3, 185, 160))
+    img_cropped[:,:,:] = img[:, 16:201,:]
     
     # Mapping from RGB to gray scale. (Shape remains unchanged.)
     # Y = (2*R + 5*G + 1*B)/8
-    img_cropped_gray = np.zeros((img_cropped.shape[0], img_cropped.shape[1], 1))
-    img_cropped_gray = (2*img_cropped[:,:,0] + 5*img_cropped[:,:,1] + img_cropped[:,:,2])/8.0
+    img_cropped_gray = np.zeros((1, img_cropped.shape[0], img_cropped.shape[1]))
+    img_cropped_gray = (2*img_cropped[0,:,:] + 5*img_cropped[1,:,:] + img_cropped[2,:,:])/8.0
     
-    # Rescaling image to 84x84x1.
-    img_cropped_gray_resized = np.zeros((84,84,1))
-    img_cropped_gray_resized[:,:,0] = sc.imresize(img_cropped_gray, (84,84,1), interp='bilinear', mode=None)
+    # Rescaling image to 1x84x84.
+    img_cropped_gray_resized = np.zeros((1,84,84))
+    img_cropped_gray_resized[0,:,:] = sc.imresize(img_cropped_gray, (1,84,84), interp='bilinear', mode=None)
     
     # Saving memory. Colors goes from 0 to 255.
     img_final = np.uint8(img_cropped_gray_resized)
@@ -124,7 +133,8 @@ def process_img(observation):
 def env_reset(env, queue):
     queue.queue_reset()
     obs = env.reset()
-    return process_img(obs)
+    queue.add(process_img(obs), 0, 0, False)
+    return queue.get_recent_state()
     
 def env_step(env, queue, action):
     obs, rw, done, _ = env.step(action)
@@ -134,7 +144,7 @@ def env_step(env, queue, action):
 
 class Agent:
     
-    def __init__(self, env_name, t_max, T_max, C, eval_num, shared):
+    def __init__(self, env_name, t_max, T_max, C, eval_num, gamma):
         
         self.t_start = 0
         self.t = 0
@@ -145,8 +155,7 @@ class Agent:
         
         self.C = C
         self.eval_num = eval_num
-        
-        self.shared = shared
+        self.gamma = gamma
         
         self.is_terminal = False
         
@@ -155,10 +164,14 @@ class Agent:
         self.net = dnn.DeepNet(self.env.action_space.n)
         self.s_t = env_reset(self.env, self.queue)
         
-        self.gradients = np.zeros((5, 5)) #!
-        
         self.R = 0
         self.sign = False
+        
+        self.diff = []
+        self.epsilon = 1.0
+    
+    def get_net(self):
+        return self.net
     
     # For details: https://arxiv.org/abs/1602.01783
     def run(self, learner_id):
@@ -167,7 +180,6 @@ class Agent:
         
         while self.T < self.T_max:
 
-            self.clear_gradients()
             self.synchronize_dnn()
             
             self.play_game_for_a_while()
@@ -182,14 +194,11 @@ class Agent:
                 self.evaluate_during_training()
     
     # IMPLEMENTATIONS FOR the FUNCTIONS above
-                
-    def clear_gradients(self):
-        self.gradients.fill(0.0)
         
     def synchronize_dnn(self):
         lock.acquire()
         try:
-            self.shared.synchronize_net(self.net)
+            self.net.synchronize_net(shared)
         finally:
             lock.release()
         
@@ -197,12 +206,15 @@ class Agent:
     
         self.t_start = self.t
         
+        self.epsilon = (1.0 - 0.1)*5/self.T_max *self.T
+        
         self.s_t = env_reset(self.env, self.queue)
         
         while not (self.is_terminal or self.t - self.t_start == self.t_max):
             self.t += 1
             self.T += 1
-            action = dnn.action_with_exploration(self.net, self.s_t)
+            print (self.t)
+            action = dnn.action_with_exploration(self.net, self.s_t, self.epsilon)
             self.s_t = env_step(self.env, self.queue, action)
             self.is_terminal = self.queue.get_is_last_terminal()
             if self.T % self.C == 0:
@@ -212,20 +224,36 @@ class Agent:
         if self.is_terminal:
             self.R = 0
         else:
-            self.R = dnn.value(self.net, self.s_t)
+            self.R = self.net.state_value(self.s_t)
         
     def calculate_gradients(self):
-        self.gradients.fill(1)
         
+        idx = self.queue.get_last_idx()
+        while idx > 3:
+            state = self.queue.get_state_at(idx)
+            reward = self.queue.get_reward_at(idx)
+            action = self.queue.get_action_at(idx)
+            
+            self.R = reward + self.gamma * self.R
+            self.net.train_net(state, action, self.R)
+            
+            idx = idx-1
+        
+        state = self.queue.get_state_at(idx)
+        reward = self.queue.get_reward_at(idx)
+        action = self.queue.get_action_at(idx)
+            
+        self.R = reward + self.gamma * R
+        self.diff = self.net.train_net(state, action, R)
+            
         if self.sign:
             logger.log_losses(0, self.T, self.learner_id) #!
             self.sign = False
         
-    
     def sync_update(self):
         lock.acquire()
         try:
-            self.shared.sync_update(self.gradients)
+            self.net.sync_update(shared, self.diff)
         finally:
             lock.release()
         
@@ -272,10 +300,3 @@ class Agent:
             total_rw += rewards[x]
         print (total_rw)
         
-    # Read and write the model.
-    
-    def save_model(self, file_name):
-        pass
-        
-    def read_model(self, file_name):
-        pass
