@@ -19,7 +19,7 @@ def init_lock_shared(l, sh):
 def create_shared(env_name):
     temp_env = gym.make(env_name)
     num_actions = temp_env.action_space.n
-    net = dnn.Manager().DeepNet(num_actions)
+    net = dnn.DeepNet(num_actions)
     temp_env.close()
     
     prms_pi = net.get_parameters_pi()
@@ -41,7 +41,7 @@ def create_agent_for_evaluation():
     meta_data = logger.read_metadata()
     atari_name = meta_data[1]
     
-    agent = Agent(atari_name, 10000, 0, 0, 0, 0)
+    agent = Agent(atari_name, 10000, 0, 0, 0, 0) # 10.000 is the maximum length of a game in OpenAi gym
     logger.load_model(agent.get_net())
     
     return agent
@@ -51,9 +51,9 @@ def create_agent_for_evaluation():
 class Queue:
     
     def __init__(self, max_size):
-        self.size = max_size + 1
+        self.size = max_size
         
-        self.observations = np.ndarray((self.size, 84, 84))
+        self.observations = np.ndarray((self.size, 84, 84), dtype=np.uint8) # save memory with uint8
         self.rewards = np.ndarray((self.size))
         self.actions = np.ndarray((self.size))
         
@@ -83,12 +83,12 @@ class Queue:
         
     def get_recent_state(self):
         if self.last_idx > 2:
-            return self.observations[self.last_idx-3:self.last_idx+1,:,:]
+            return np.float32(self.observations[self.last_idx-3:self.last_idx+1,:,:])
         return None
         
     def get_state_at(self, idx):
         if idx > 2:
-            return self.observations[idx-3:idx+1,:,:]
+            return np.float32(self.observations[idx-3:idx+1,:,:])
         return None
     
     def get_reward_at(self, idx):
@@ -112,7 +112,7 @@ def process_img(observation):
     # Reshape input to meet with CNTK expectations.
     img = np.reshape(input_img, (3, 210, 160))
     
-    # Cropping the playing area. The shape based on empirical decision.
+    # Cropping the playing area. The shape is based on empirical decision.
     img_cropped = np.zeros((3, 185, 160))
     img_cropped[:,:,:] = img[:, 16:201,:]
     
@@ -129,12 +129,13 @@ def process_img(observation):
     img_final = np.uint8(img_cropped_gray_resized)
     
     return img_final
-    
+
+# Functions to avoid temporary coupling.
 def env_reset(env, queue):
     queue.queue_reset()
     obs = env.reset()
     queue.add(process_img(obs), 0, 0, False)
-    return queue.get_recent_state()
+    return queue.get_recent_state() # should return None
     
 def env_step(env, queue, action):
     obs, rw, done, _ = env.step(action)
@@ -159,13 +160,13 @@ class Agent:
         
         self.is_terminal = False
         
-        self.queue = Queue(t_max)
+        self.queue = Queue(t_max + 1) # +1 because of env_reset
         self.env = gym.make(env_name)
         self.net = dnn.DeepNet(self.env.action_space.n)
         self.s_t = env_reset(self.env, self.queue)
         
         self.R = 0
-        self.sign = False
+        self.signal = False
         
         self.diff = []
         self.epsilon = 1.0
@@ -186,9 +187,11 @@ class Agent:
             
             self.set_R()
             
+            # According to the article the gradients should be calculated.
+            # Here: The parameters are updated and the differences are added to the shared NN's.
             self.calculate_gradients()
             
-            self.sync_update()
+            self.sync_update() # Syncron update instead of asyncron!
             
             if self.T % self.C == 0:
                 self.evaluate_during_training()
@@ -198,7 +201,7 @@ class Agent:
     def synchronize_dnn(self):
         lock.acquire()
         try:
-            self.net.synchronize_net(shared)
+            self.net.synchronize_net(shared) # the shared parameters are copied into 'net'
         finally:
             lock.release()
         
@@ -206,19 +209,18 @@ class Agent:
     
         self.t_start = self.t
         
-        self.epsilon = (1.0 - 0.1)*5/self.T_max *self.T
+        self.epsilon = max(0.1, 1.0 - (1.0 - 0.1)*5/self.T_max*self.T) # first decreasing, then it is constant
         
         self.s_t = env_reset(self.env, self.queue)
         
         while not (self.is_terminal or self.t - self.t_start == self.t_max):
             self.t += 1
             self.T += 1
-            print (self.t)
             action = dnn.action_with_exploration(self.net, self.s_t, self.epsilon)
             self.s_t = env_step(self.env, self.queue, action)
             self.is_terminal = self.queue.get_is_last_terminal()
-            if self.T % self.C == 0:
-                self.sign = True
+            if self.T % self.C == 0: # log loss when evaluation happens
+                self.signal = True
         
     def set_R(self):
         if self.is_terminal:
@@ -229,26 +231,27 @@ class Agent:
     def calculate_gradients(self):
         
         idx = self.queue.get_last_idx()
-        while idx > 3:
+        while idx > 3: # the state is 4 pieces of frames stacked together -> at least 4 frames are necessary
             state = self.queue.get_state_at(idx)
             reward = self.queue.get_reward_at(idx)
             action = self.queue.get_action_at(idx)
             
             self.R = reward + self.gamma * self.R
-            self.net.train_net(state, action, self.R)
+            self.net.train_net(state, action, self.R, False)
             
             idx = idx-1
         
+        # At the last training step the differences should be saved
         state = self.queue.get_state_at(idx)
         reward = self.queue.get_reward_at(idx)
         action = self.queue.get_action_at(idx)
             
-        self.R = reward + self.gamma * R
-        self.diff = self.net.train_net(state, action, R)
+        self.R = reward + self.gamma * self.R
+        self.diff = self.net.train_net(state, action, self.R, True)
             
-        if self.sign:
+        if self.signal:
             logger.log_losses(0, self.T, self.learner_id) #!
-            self.sign = False
+            self.signal = False
         
     def sync_update(self):
         lock.acquire()
@@ -261,7 +264,7 @@ class Agent:
         
         print ('Evaluation at: ' + str(self.T))
         
-        for rnd in range(self.eval_num):
+        for rnd in range(self.eval_num): # Run more game epsiode to get more robust result for performance
             state = env_reset(self.env, self.queue)
             finished = False
             cntr = 0
@@ -296,7 +299,11 @@ class Agent:
         # Representing the results. 
         print ('The collected rewards over duration:')
         total_rw = 0.0
-        for x in range(len(rewards)):
-            total_rw += rewards[x]
+        for x in rewards:
+            total_rw += x
         print (total_rw)
+
+    def save_model(self, shared_params, path_model_pi, path_model_v):
+        self.net.synchronize_net(shared_params) # copy the parameters into the recently created agent's netork
+        self.net.save_model(path_model_pi, path_model_v)
         

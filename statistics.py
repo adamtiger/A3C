@@ -1,6 +1,12 @@
 import json
 import os
 import matplotlib.pyplot as plt
+import argparse
+
+parser = argparse.ArgumentParser(description='A3C statistics')
+
+parser.add_argument('--show-all', action='store_true',
+        help='call show_all function')
 
 
 path_rewards = 'files/rewards/'
@@ -118,3 +124,21 @@ def draw_simple_graphs(num, x, y, y_label):
     plt.xlabel('Number of actions')
     plt.ylabel(y_label)
     plt.show()
+
+def show_all():
+    tot_rwds = collect_reward_file_names()
+    tot_losses = collect_loss_file_names()
+    
+    min_data = calculate_min_rewards(tot_rwds, 0)
+    max_data = calculate_max_rewards(tot_rwds, 0)
+    avg_data = calculate_avg_rewards(tot_rwds, 0)
+    loss_data = loss_of_learner(tot_losses, 0)
+
+    draw_simple_graphs(1, min_data[1], min_data[0], 'minimum reward')
+    draw_simple_graphs(2, max_data[1], max_data[0], 'maximum reward')
+    draw_simple_graphs(3, avg_data[1], avg_data[0], 'average reward')
+    draw_simple_graphs(4, loss_data[1], avg_data[0], 'loss')
+
+if show_all:
+    show_all()
+

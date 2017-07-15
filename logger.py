@@ -40,8 +40,8 @@ def read_metadata():
         data = json.load(f)
     return data
 
-def save_model(net):
-    net.save_model(path_model_pi, path_model_v)
+def save_model(agent, shared_params):
+    agent.save_model(shared_params, path_model_pi, path_model_v)
     
 def load_model(net):
     net.load_model(path_model_pi, path_model_v)
