@@ -10,7 +10,7 @@ path_meta = 'files/metadata.json'
 path_model_pi = 'files/model_pi.model'
 path_model_v = 'files/model_v.model'
 
-def create_folders(atari_name, cores, tmax, Tmax, C, gamma):
+def create_folders(atari_name, cores, tmax, Tmax, C, gamma, lr):
     if os.path.exists(root):
         # Delete if exists.
         print ('The folder named files is deleted!')
@@ -21,7 +21,7 @@ def create_folders(atari_name, cores, tmax, Tmax, C, gamma):
     os.makedirs(path_rewards)
     os.makedirs(path_losses)
         
-    metadata = [time.strftime("%d/%m/%y"), atari_name, str(cores), str(tmax), str(Tmax), str(C), str(gamma)]
+    metadata = [time.strftime("%d/%m/%y"), atari_name, str(cores), str(tmax), str(Tmax), str(C), str(gamma), str(lr)]
     with open(path_meta, "w") as f:
         f.write(json.dumps(metadata))
 

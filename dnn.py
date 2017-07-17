@@ -9,8 +9,9 @@ try_set_default_device(cpu())
 
 class DeepNet:
     
-    def __init__(self, num_actions):
+    def __init__(self, num_actions, lr):
         self.num_actions = num_actions
+        self.lr = lr
         
         self.build_model()
         self.build_trainer()
@@ -20,7 +21,7 @@ class DeepNet:
         # Defining the input variables for training and evaluation.
         self.stacked_frames = cntk.input_variable((4, 84, 84), dtype=np.float32)
         self.action = cntk.input_variable(self.num_actions)
-        self.R = cntk.input_variable(1)
+        self.R = cntk.input_variable(1, dtype=np.float32)
         
         # Creating the shared functions. (The common part of the two NNs.)
         conv1 = Convolution2D((8, 8), num_filters = 16, pad = False, strides=4, activation=cntk.relu)
@@ -43,7 +44,7 @@ class DeepNet:
     def build_trainer(self):
         
         # Set the learning rate, and the momentum parameters for the Adam optimizer.
-        lr = learning_rate_schedule(0.00025, UnitType.minibatch)
+        lr = learning_rate_schedule(self.lr, UnitType.minibatch)
         beta1 = momentum_schedule(0.9)
         #beta2 = momentum_schedule(0.99)
         
@@ -54,8 +55,8 @@ class DeepNet:
         loss_on_pi = cntk.times(pi_a_s, cntk.minus(self.R, self.v))
         
         # Create the trainiers.
-        trainer_v = cntk.Trainer(self.v, (loss_on_v), [adam(self.pms_v, lr, beta1)])
-        trainer_pi = cntk.Trainer(self.pi, (loss_on_pi), [adam(self.pms_pi, lr, beta1)])
+        trainer_v = cntk.Trainer(self.v, (loss_on_v), [adam(self.pms_v, lr, beta1, gradient_clipping_threshold_per_sample=1.0)])
+        trainer_pi = cntk.Trainer(self.pi, (loss_on_pi), [adam(self.pms_pi, lr, beta1, gradient_clipping_threshold_per_sample=1.0)])
         
         self.trainer_pi = trainer_pi
         self.trainer_v = trainer_v

@@ -20,6 +20,8 @@ parser.add_argument('--eval-num', type=int, default=10, metavar='N',
         help='the number of evaluations in an evaluation session (default:10)')
 parser.add_argument('--gamma', type=float, default=0.99, metavar='F',
         help='the discounting factor (default:0.99)')
+parser.add_argument('--lr', type=float, default=0.00025, metavar='F',
+        help='the learning rate (default:0.00025)')
 parser.add_argument('--test-mode', action='store_true',
         help='training or evaluation')
 
@@ -28,13 +30,13 @@ args = parser.parse_args()
 # IF TRAIN mode -> train the learners
 
 def executable(process_id):
-    lrn.execute_agent(process_id, args.atari_env, args.t_max, args.T_max, args.C, args.eval_num, args.gamma)
+    lrn.execute_agent(process_id, args.atari_env, args.t_max, args.T_max, args.C, args.eval_num, args.gamma, args.lr)
 
 if not args.test_mode:
     
     print ('Training mode.')
     
-    logger.create_folders(args.atari_env, args.num_cores, args.t_max, args.T_max, args.C, args.gamma)
+    logger.create_folders(args.atari_env, args.num_cores, args.t_max, args.T_max, args.C, args.gamma, args.lr)
     
     # start the processes
     if __name__ == '__main__':
@@ -54,7 +56,7 @@ if not args.test_mode:
         pool.close()
         pool.join()
         
-        for_saving = lrn.create_agent(args.atari_env, args.t_max, args.T_max, args.C, args.eval_num, args.gamma)
+        for_saving = lrn.create_agent(args.atari_env, args.t_max, args.T_max, args.C, args.eval_num, args.gamma, args.lr)
         logger.save_model(for_saving, sh)
          
 # IF EVALUATION mode -> evaluate a test run (rewards, video)
