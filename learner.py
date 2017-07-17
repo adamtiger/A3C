@@ -250,7 +250,7 @@ class Agent:
         self.diff = self.net.train_net(state, action, self.R, True)
             
         if self.signal:
-            logger.log_losses(0, self.T, self.learner_id) #!
+            logger.log_losses(self.net.get_last_avg_loss(), self.T, self.learner_id)
             self.signal = False
         
     def sync_update(self):

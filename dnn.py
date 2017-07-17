@@ -99,6 +99,9 @@ class DeepNet:
     
     def get_num_actions(self):
         return self.num_actions
+        
+    def get_last_avg_loss(self):
+        return self.trainer_pi.previous_minibatch_loss_average + self.trainer_v.previous_minibatch_loss_average
     
     def synchronize_net(self, shared): 
         for idx in range(0, len(self.pms_pi)):
