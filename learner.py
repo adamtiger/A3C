@@ -193,8 +193,9 @@ class Agent:
             
             self.sync_update() # Syncron update instead of asyncron!
             
-            if self.T % self.C == 0:
+            if self.signal:
                 self.evaluate_during_training()
+                self.signal = False
     
     # IMPLEMENTATIONS FOR the FUNCTIONS above
         
@@ -208,6 +209,7 @@ class Agent:
     def play_game_for_a_while(self):
     
         self.t_start = self.t
+        self.is_terminal = False
         
         self.epsilon = max(0.1, 1.0 - (1.0 - 0.1)*5/self.T_max*self.T) # first decreasing, then it is constant
         
@@ -224,7 +226,8 @@ class Agent:
         
     def set_R(self):
         if self.is_terminal:
-            self.R = 0
+            self.R = self.net.state_value(self.s_t)
+            self.R[0][0] = 0.0 # Without this error dropped. special format is given back.
         else:
             self.R = self.net.state_value(self.s_t)
         
@@ -235,7 +238,6 @@ class Agent:
             state = self.queue.get_state_at(idx)
             reward = self.queue.get_reward_at(idx)
             action = self.queue.get_action_at(idx)
-            
             self.R = reward + self.gamma * self.R
             self.net.train_net(state, action, self.R, False)
             
@@ -251,7 +253,6 @@ class Agent:
             
         if self.signal:
             logger.log_losses(self.net.get_last_avg_loss(), self.T, self.learner_id)
-            self.signal = False
         
     def sync_update(self):
         lock.acquire()
