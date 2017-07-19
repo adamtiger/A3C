@@ -131,7 +131,7 @@ def draw_simple_graphs(num, x, y, y_label):
     plt.ylabel(y_label)
     plt.show()
 
-def show_all():
+def show_all(learner_id):
     
     with open(path_meta, 'r') as f:
         metadat = json.load(f)
@@ -141,8 +141,8 @@ def show_all():
     tot_losses = collect_loss_file_names()
     
     print('Calculate statistics.')
-    reward_stats = calculate_reward_statistics(tot_rwds, 0)
-    loss_data = loss_of_learner(tot_losses, 0)
+    reward_stats = calculate_reward_statistics(tot_rwds, learner_id)
+    loss_data = loss_of_learner(tot_losses, learner_id)
     
     print('Show graphs.')
     draw_simple_graphs(1, reward_stats[3], reward_stats[0], 'average reward')
@@ -151,5 +151,5 @@ def show_all():
     draw_simple_graphs(4, loss_data[1], loss_data[0], 'loss')
 
 if show_all:
-    show_all()
+    show_all(0)
 
