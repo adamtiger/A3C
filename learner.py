@@ -229,7 +229,7 @@ class Agent:
     def set_R(self):
         if self.is_terminal:
             self.R = self.net.state_value(self.s_t)
-            self.R[0][0] = 0.0 # Without this error dropped. special format is given back.
+            self.R[0][0] = 0.0 # Without this, error dropped. special format is given back.
         else:
             self.R = self.net.state_value(self.s_t)
         
@@ -251,7 +251,7 @@ class Agent:
         action = self.queue.get_action_at(idx)
             
         self.R = reward + self.gamma * self.R
-        self.diff = self.net.train_net(state, action, self.R, True)
+        self.diff = self.net.train_net(state, action, np.float32(self.R), True)
             
         if self.signal:
             logger.log_losses(self.net.get_last_avg_loss(), self.T, self.learner_id)
