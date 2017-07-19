@@ -9,8 +9,9 @@ try_set_default_device(cpu())
 
 class DeepNet:
     
-    def __init__(self, num_actions):
+    def __init__(self, num_actions, lr):
         self.num_actions = num_actions
+        self.lr = lr
         
         self.build_model()
         self.build_trainer()
@@ -20,7 +21,8 @@ class DeepNet:
         # Defining the input variables for training and evaluation.
         self.stacked_frames = cntk.input_variable((4, 84, 84), dtype=np.float32)
         self.action = cntk.input_variable(self.num_actions)
-        self.R = cntk.input_variable(1)
+        self.R = cntk.input_variable(1, dtype=np.float32)
+        self.v_calc = cntk.input_variable(1, dtype=np.float32) # In the loss of pi, the parameters of V(s) should be fixed.
         
         # Creating the shared functions. (The common part of the two NNs.)
         conv1 = Convolution2D((8, 8), num_filters = 16, pad = False, strides=4, activation=cntk.relu)
@@ -39,23 +41,22 @@ class DeepNet:
         self.v = v(self.stacked_frames)
         self.pms_v = self.v.parameters
         
-
     def build_trainer(self):
         
         # Set the learning rate, and the momentum parameters for the Adam optimizer.
-        lr = learning_rate_schedule(0.00025, UnitType.minibatch)
+        lr = learning_rate_schedule(self.lr, UnitType.minibatch)
         beta1 = momentum_schedule(0.9)
-        #beta2 = momentum_schedule(0.99)
+        beta2 = momentum_schedule(0.99)
         
         # Calculate the losses.
         loss_on_v = cntk.squared_error(self.R, self.v)
         
-        pi_a_s = cntk.times_transpose(cntk.log(self.pi), self.action)
-        loss_on_pi = cntk.times(pi_a_s, cntk.minus(self.R, self.v))
+        pi_a_s = cntk.log(cntk.times_transpose(self.pi, self.action))
+        loss_on_pi = cntk.times(pi_a_s, cntk.minus(self.R, self.v_calc))
         
         # Create the trainiers.
-        trainer_v = cntk.Trainer(self.v, (loss_on_v), [adam(self.pms_v, lr, beta1)])
-        trainer_pi = cntk.Trainer(self.pi, (loss_on_pi), [adam(self.pms_pi, lr, beta1)])
+        trainer_v = cntk.Trainer(self.v, (loss_on_v), [adam(self.pms_v, lr, beta1, variance_momentum=beta2, gradient_clipping_threshold_per_sample=1.0)])
+        trainer_pi = cntk.Trainer(self.pi, (loss_on_pi), [adam(self.pms_pi, lr, beta1, variance_momentum=beta2, gradient_clipping_threshold_per_sample=1.0)])
         
         self.trainer_pi = trainer_pi
         self.trainer_v = trainer_v
@@ -74,11 +75,14 @@ class DeepNet:
                 self.update_v.append(x.value)
         
         # Training part
-        action_as_array = np.zeros(self.num_actions)
+        action_as_array = np.zeros(self.num_actions, dtype=np.float32)
         action_as_array[int(action)] = 1
         
-        self.trainer_pi.train_minibatch({self.stacked_frames: [state], self.action: [action_as_array], self.R: [R]})
-        self.trainer_v.train_minibatch({self.stacked_frames: [state], self.R: [R]})
+        v_calc = self.state_value(state)
+        float32_R = np.float32(R) # Without this, CNTK warns to use float32 instead of float64 to enhance performance.
+        
+        self.trainer_pi.train_minibatch({self.stacked_frames: [state], self.action: [action_as_array], self.R: [float32_R], self.v_calc: [v_calc]})
+        self.trainer_v.train_minibatch({self.stacked_frames: [state], self.R: [float32_R]})
         
         if calc_diff:
             # Calculate the differences between the updated and the original params.
@@ -99,12 +103,15 @@ class DeepNet:
     
     def get_num_actions(self):
         return self.num_actions
+        
+    def get_last_avg_loss(self):
+        return self.trainer_pi.previous_minibatch_loss_average + self.trainer_v.previous_minibatch_loss_average
     
     def synchronize_net(self, shared): 
         for idx in range(0, len(self.pms_pi)):
             self.pms_pi[idx].value = shared[0][idx]
         for idx in range(0, len(self.pms_v)):
-            self.pms_v[idx].value = np.asarray(shared[1][idx])
+            self.pms_v[idx].value = shared[1][idx]
                     
     def sync_update(self, shared, diff):
         for idx in range(0, len(self.pms_pi)):
@@ -168,6 +175,7 @@ def action_with_exploration(net, state, epsilon): # Take into account None as in
             act = r.randint(0, n-1)
         else:
             prob_vec = net.pi_probabilities(state)[0] * 1000
+
             candidate = r.randint(0, 1000)
         
             for i in range(0, n):

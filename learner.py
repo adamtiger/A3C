@@ -19,7 +19,7 @@ def init_lock_shared(l, sh):
 def create_shared(env_name):
     temp_env = gym.make(env_name)
     num_actions = temp_env.action_space.n
-    net = dnn.DeepNet(num_actions)
+    net = dnn.DeepNet(num_actions, 0)
     temp_env.close()
     
     prms_pi = net.get_parameters_pi()
@@ -27,12 +27,12 @@ def create_shared(env_name):
     
     return [prms_pi, prms_v]
 
-def execute_agent(learner_id, atari_env, t_max, T_max, C, eval_num, gamma):
-    agent = create_agent(atari_env, t_max, T_max, C, eval_num, gamma)
+def execute_agent(learner_id, atari_env, t_max, T_max, C, eval_num, gamma, lr):
+    agent = create_agent(atari_env, t_max, T_max, C, eval_num, gamma, lr)
     agent.run(learner_id)
         
-def create_agent(atari_env, t_max, T_max, C, eval_num, gamma):
-    return Agent(atari_env, t_max, T_max, C, eval_num, gamma)
+def create_agent(atari_env, t_max, T_max, C, eval_num, gamma, lr):
+    return Agent(atari_env, t_max, T_max, C, eval_num, gamma, lr)
     
 def create_agent_for_evaluation():
     
@@ -41,7 +41,7 @@ def create_agent_for_evaluation():
     meta_data = logger.read_metadata()
     atari_name = meta_data[1]
     
-    agent = Agent(atari_name, 10000, 0, 0, 0, 0) # 10.000 is the maximum length of a game in OpenAi gym
+    agent = Agent(atari_name, 10000, 0, 0, 0, 0, 0) # 10.000 is the maximum length of a game in OpenAi gym
     logger.load_model(agent.get_net())
     
     return agent
@@ -145,7 +145,7 @@ def env_step(env, queue, action):
 
 class Agent:
     
-    def __init__(self, env_name, t_max, T_max, C, eval_num, gamma):
+    def __init__(self, env_name, t_max, T_max, C, eval_num, gamma, lr):
         
         self.t_start = 0
         self.t = 0
@@ -162,7 +162,7 @@ class Agent:
         
         self.queue = Queue(t_max + 1) # +1 because of env_reset
         self.env = gym.make(env_name)
-        self.net = dnn.DeepNet(self.env.action_space.n)
+        self.net = dnn.DeepNet(self.env.action_space.n, lr)
         self.s_t = env_reset(self.env, self.queue)
         
         self.R = 0
@@ -193,8 +193,9 @@ class Agent:
             
             self.sync_update() # Syncron update instead of asyncron!
             
-            if self.T % self.C == 0:
+            if self.signal:
                 self.evaluate_during_training()
+                self.signal = False
     
     # IMPLEMENTATIONS FOR the FUNCTIONS above
         
@@ -208,6 +209,7 @@ class Agent:
     def play_game_for_a_while(self):
     
         self.t_start = self.t
+        self.is_terminal = False
         
         self.epsilon = max(0.1, 1.0 - (1.0 - 0.1)*5/self.T_max*self.T) # first decreasing, then it is constant
         
@@ -221,10 +223,13 @@ class Agent:
             self.is_terminal = self.queue.get_is_last_terminal()
             if self.T % self.C == 0: # log loss when evaluation happens
                 self.signal = True
+            if self.T % 5000 == 0:
+                print('Actual iter. num.: ' + str(self.T))
         
     def set_R(self):
         if self.is_terminal:
-            self.R = 0
+            self.R = self.net.state_value(self.s_t)
+            self.R[0][0] = 0.0 # Without this, error dropped. special format is given back.
         else:
             self.R = self.net.state_value(self.s_t)
         
@@ -235,7 +240,6 @@ class Agent:
             state = self.queue.get_state_at(idx)
             reward = self.queue.get_reward_at(idx)
             action = self.queue.get_action_at(idx)
-            
             self.R = reward + self.gamma * self.R
             self.net.train_net(state, action, self.R, False)
             
@@ -247,11 +251,10 @@ class Agent:
         action = self.queue.get_action_at(idx)
             
         self.R = reward + self.gamma * self.R
-        self.diff = self.net.train_net(state, action, self.R, True)
+        self.diff = self.net.train_net(state, action, np.float32(self.R), True)
             
         if self.signal:
-            logger.log_losses(0, self.T, self.learner_id) #!
-            self.signal = False
+            logger.log_losses(self.net.get_last_avg_loss(), self.T, self.learner_id)
         
     def sync_update(self):
         lock.acquire()
