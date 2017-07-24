@@ -24,17 +24,17 @@ class DeepNet:
         self.R = cntk.input_variable(1, dtype=np.float32)
         self.v_calc = cntk.input_variable(1, dtype=np.float32) # In the loss of pi, the parameters of V(s) should be fixed.
         
-        # Creating the shared functions. (The common part of the two NNs.)
-        conv1 = Convolution2D((8, 8), num_filters = 16, pad = False, strides=4, activation=cntk.relu)
-        conv2 = Convolution2D((4, 4), num_filters = 32, pad = False, strides=2, activation=cntk.relu)
-        dense = Dense(256, activation=cntk.relu)
-        shared_funcs = Sequential([conv1, conv2, dense])
-        
         # Creating the value approximator extension.
-        v = Sequential([shared_funcs, Dense(1)])
+        conv1_v = Convolution2D((8, 8), num_filters = 16, pad = False, strides=4, activation=cntk.relu)
+        conv2_v = Convolution2D((4, 4), num_filters = 32, pad = False, strides=2, activation=cntk.relu)
+        dense_v = Dense(256, activation=cntk.relu)
+        v = Sequential([conv1_v, conv2_v, dense_v, Dense(1, activation=cntk.relu)])
         
         # Creating the policy approximator extension.
-        pi = Sequential([shared_funcs, Dense(self.num_actions, activation=cntk.softmax)])
+        conv1_pi = Convolution2D((8, 8), num_filters = 16, pad = False, strides=4, activation=cntk.relu)
+        conv2_pi = Convolution2D((4, 4), num_filters = 32, pad = False, strides=2, activation=cntk.relu)
+        dense_pi = Dense(256, activation=cntk.relu)
+        pi = Sequential([conv1_pi, conv2_pi, dense_pi, Dense(self.num_actions, activation=cntk.softmax)])
         
         self.pi = pi(self.stacked_frames)
         self.pms_pi = self.pi.parameters # List of cntk Parameter types (containes the function's parameters)
