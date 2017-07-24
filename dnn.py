@@ -1,7 +1,7 @@
 import numpy as np
 import cntk
 from cntk.device import try_set_default_device, cpu
-from cntk.layers import Convolution2D, Dense, Sequential
+from cntk.layers import Convolution2D, Dense, Sequential, BatchNormalization
 from cntk.learners import adam, learning_rate_schedule, momentum_schedule, UnitType
 
 # Set CPU as device for the neural network.
@@ -55,8 +55,8 @@ class DeepNet:
         loss_on_pi = cntk.times(pi_a_s, cntk.minus(self.R, self.v_calc))
         
         # Create the trainiers.
-        trainer_v = cntk.Trainer(self.v, (loss_on_v), [adam(self.pms_v, lr, beta1, variance_momentum=beta2, gradient_clipping_threshold_per_sample=1.0)])
-        trainer_pi = cntk.Trainer(self.pi, (loss_on_pi), [adam(self.pms_pi, lr, beta1, variance_momentum=beta2, gradient_clipping_threshold_per_sample=1.0)])
+        trainer_v = cntk.Trainer(self.v, (loss_on_v), [adam(self.pms_v, lr, beta1, variance_momentum=beta2, gradient_clipping_threshold_per_sample=1.0, l2_regularization_weight=0.01)])
+        trainer_pi = cntk.Trainer(self.pi, (loss_on_pi), [adam(self.pms_pi, lr, beta1, variance_momentum=beta2, gradient_clipping_threshold_per_sample=1.0, l2_regularization_weight=0.01)])
         
         self.trainer_pi = trainer_pi
         self.trainer_v = trainer_v

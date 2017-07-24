@@ -27,12 +27,12 @@ def create_shared(env_name):
     
     return [prms_pi, prms_v]
 
-def execute_agent(learner_id, atari_env, t_max, T_max, C, eval_num, gamma, lr):
-    agent = create_agent(atari_env, t_max, T_max, C, eval_num, gamma, lr)
+def execute_agent(learner_id, atari_env, t_max, game_length, T_max, C, eval_num, gamma, lr):
+    agent = create_agent(atari_env, t_max, game_length, T_max, C, eval_num, gamma, lr)
     agent.run(learner_id)
         
-def create_agent(atari_env, t_max, T_max, C, eval_num, gamma, lr):
-    return Agent(atari_env, t_max, T_max, C, eval_num, gamma, lr)
+def create_agent(atari_env, t_max, game_length, T_max, C, eval_num, gamma, lr):
+    return Agent(atari_env, t_max, game_length, T_max, C, eval_num, gamma, lr)
     
 def create_agent_for_evaluation():
     
@@ -41,7 +41,7 @@ def create_agent_for_evaluation():
     meta_data = logger.read_metadata()
     atari_name = meta_data[1]
     
-    agent = Agent(atari_name, 10000, 0, 0, 0, 0, 0) # 10.000 is the maximum length of a game in OpenAi gym
+    agent = Agent(atari_name, 50000, 50000, 0, 0, 0, 0, 0) 
     logger.load_model(agent.get_net())
     
     return agent
@@ -76,6 +76,8 @@ class Queue:
     def add(self, observation, reward, action, done):
         self.last_idx += 1
         self.observations[self.last_idx, :, :] = observation[0,:,:]
+        if reward > 1.0:
+            reward = 1.0 # reward clipping
         self.rewards[self.last_idx] = reward
         self.actions[self.last_idx] = action
         
@@ -145,11 +147,13 @@ def env_step(env, queue, action):
 
 class Agent:
     
-    def __init__(self, env_name, t_max, T_max, C, eval_num, gamma, lr):
+    def __init__(self, env_name, t_max, game_length, T_max, C, eval_num, gamma, lr):
         
         self.t_start = 0
         self.t = 0
         self.t_max = t_max
+        
+        self.game_length = game_length
         
         self.T = 0
         self.T_max = T_max
@@ -160,7 +164,7 @@ class Agent:
         
         self.is_terminal = False
         
-        self.queue = Queue(t_max + 1) # +1 because of env_reset
+        self.queue = Queue(game_length) 
         self.env = gym.make(env_name)
         self.net = dnn.DeepNet(self.env.action_space.n, lr)
         self.s_t = env_reset(self.env, self.queue)
@@ -208,12 +212,14 @@ class Agent:
         
     def play_game_for_a_while(self):
     
+        if self.is_terminal:
+            self.s_t = env_reset(self.env, self.queue)
+            self.t = 0
+            self.is_terminal = False
+            
         self.t_start = self.t
-        self.is_terminal = False
         
         self.epsilon = max(0.1, 1.0 - (1.0 - 0.1)*5/self.T_max*self.T) # first decreasing, then it is constant
-        
-        self.s_t = env_reset(self.env, self.queue)
         
         while not (self.is_terminal or self.t - self.t_start == self.t_max):
             self.t += 1
@@ -272,7 +278,7 @@ class Agent:
             finished = False
             cntr = 0
             rewards = []
-            while not (finished or cntr == self.t_max):
+            while not (finished or cntr == self.game_length):
                 action = dnn.action(self.net, state)
                 state = env_step(self.env, self.queue, action)
                 rewards.append(self.queue.get_recent_reward())
@@ -290,7 +296,7 @@ class Agent:
         finished = False
         cntr = 0
         rewards = []
-        while not (finished or cntr == self.t_max):
+        while not (finished or cntr == self.game_length):
             env.render()
             action = dnn.action(self.net, state)
             state = env_step(env, self.queue, action)

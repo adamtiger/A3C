@@ -10,10 +10,10 @@ path_meta = 'files/metadata.json'
 path_model_pi = 'files/model_pi.model'
 path_model_v = 'files/model_v.model'
 
-def create_folders(atari_name, cores, tmax, Tmax, C, gamma, lr):
+def create_folders(atari_name, cores, tmax, game_length, Tmax, C, gamma, lr):
     if os.path.exists(root):
         # Delete if exists.
-        print ('The folder named files is deleted!')
+        print ('The folder named files will be deleted!')
         input ('Press Enter to continue.')
         shutil.rmtree(root)
         
@@ -21,7 +21,7 @@ def create_folders(atari_name, cores, tmax, Tmax, C, gamma, lr):
     os.makedirs(path_rewards)
     os.makedirs(path_losses)
         
-    metadata = [time.strftime("%d/%m/%y"), atari_name, 'cores '+str(cores), 'tmax '+str(tmax), 'Tmax '+str(Tmax), 'C '+str(C), 'gamma '+str(gamma), 'lr '+str(lr)]
+    metadata = [time.strftime("%d/%m/%y"), atari_name, 'cores '+str(cores), 'tmax '+str(tmax), 'gl '+str(game_length), 'Tmax '+str(Tmax), 'C '+str(C), 'gamma '+str(gamma), 'lr '+str(lr)]
     with open(path_meta, "w") as f:
         f.write(json.dumps(metadata))
 

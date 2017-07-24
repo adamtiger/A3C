@@ -10,10 +10,12 @@ parser.add_argument('--atari-env', default='Breakout-v0', metavar='S',
         help='the name of the Atari environment (default:Breakout-v0)')
 parser.add_argument('--num-cores', type=int, default=2, metavar='N',
         help='the number of cores should be exploited (default:2)')
-parser.add_argument('--t-max', type=int, default='50', metavar='N',
-        help='maximal length of a training game (default:50)')
-parser.add_argument('--T-max', type=int, default=500, metavar='N',
-        help='the length of the training (default:500)')
+parser.add_argument('--t-max', type=int, default='5', metavar='N',
+        help='update frequency (default:5)')
+parser.add_argument('--game-length', type=int, default='10000', metavar='N',
+        help='assumed maximal length of an episode (deafult:10000)')
+parser.add_argument('--T-max', type=int, default=120, metavar='N',
+        help='the length of the training (default:120)')
 parser.add_argument('--C', type=int, default=25, metavar='N',
         help='the frequency of evaluation during training (default:25)')
 parser.add_argument('--eval-num', type=int, default=10, metavar='N',
@@ -30,13 +32,13 @@ args = parser.parse_args()
 # IF TRAIN mode -> train the learners
 
 def executable(process_id):
-    lrn.execute_agent(process_id, args.atari_env, args.t_max, args.T_max, args.C, args.eval_num, args.gamma, args.lr)
+    lrn.execute_agent(process_id, args.atari_env, args.t_max, args.game_length, args.T_max, args.C, args.eval_num, args.gamma, args.lr)
 
 if not args.test_mode:
     
     print ('Training mode.')
     
-    logger.create_folders(args.atari_env, args.num_cores, args.t_max, args.T_max, args.C, args.gamma, args.lr)
+    logger.create_folders(args.atari_env, args.num_cores, args.t_max, args.game_length, args.T_max, args.C, args.gamma, args.lr)
     
     # start the processes
     if __name__ == '__main__':
@@ -56,7 +58,7 @@ if not args.test_mode:
         pool.close()
         pool.join()
         
-        for_saving = lrn.create_agent(args.atari_env, args.t_max, args.T_max, args.C, args.eval_num, args.gamma, args.lr)
+        for_saving = lrn.create_agent(args.atari_env, args.t_max, args.game_length, args.T_max, args.C, args.eval_num, args.gamma, args.lr)
         logger.save_model(for_saving, sh)
          
 # IF EVALUATION mode -> evaluate a test run (rewards, video)
